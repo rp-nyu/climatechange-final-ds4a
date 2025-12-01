@@ -112,34 +112,7 @@ elif app_mode == "Visualization":
 
     list_vars = df.columns
     
-    symbols = st.multiselect(
-        "Select two variables",
-        list_vars,
-        default=list_vars[:2]
-    )
-
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Bar Chart", "Line Chart", "Correlation", "Pairplot"]
-    )
-
-    if len(symbols) == 2:
-        tab1.bar_chart(df[symbols])
-        tab2.line_chart(df[symbols])
-
-    num_df = df.select_dtypes(include=['number'])
-    corr = num_df.corr()
-
-    fig_corr = px.imshow(
-        corr.values,
-        x=corr.columns,
-        y=corr.index,
-        color_continuous_scale="RdBu_r",
-        origin="lower"
-    )
-    tab3.plotly_chart(fig_corr)
-
-    fig_pair = figure_factory.create_scatterplotmatrix(num_df.sample(min(500, len(num_df))))
-    tab4.plotly_chart(fig_pair)
+    
 
 
 
