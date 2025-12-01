@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+from plotly import figure_factory
 
 df = pd.read_csv("climate_change_dataset.csv")
 
@@ -31,6 +33,7 @@ app_mode = st.sidebar.selectbox('Select Page',['Introduction','Visualization','P
 
 st.title("Climate Change Prediction 🔥")
 
+# INTRODUCTION PAGE
 if app_mode == "Introduction": 
     st.image("images/drid-polar-bear.jpg", use_container_width=True)
 
@@ -102,6 +105,45 @@ if app_mode == "Introduction":
            
     else:
         st.success("Poor data quality due to low completeness ratio( less than 0.85).")
+
+# VISUALIZATION PAGE
+elif app_mode == "Visualization":
+    st.markdown("### Visualization")
+
+    list_vars = df.columns
+    
+    symbols = st.multiselect(
+        "Select two variables",
+        list_vars,
+        default=list_vars[:2]
+    )
+
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["Bar Chart", "Line Chart", "Correlation", "Pairplot"]
+    )
+
+    if len(symbols) == 2:
+        tab1.bar_chart(df[symbols])
+        tab2.line_chart(df[symbols])
+
+    num_df = df.select_dtypes(include=['number'])
+    corr = num_df.corr()
+
+    fig_corr = px.imshow(
+        corr.values,
+        x=corr.columns,
+        y=corr.index,
+        color_continuous_scale="RdBu_r",
+        origin="lower"
+    )
+    tab3.plotly_chart(fig_corr)
+
+    fig_pair = figure_factory.create_scatterplotmatrix(num_df.sample(min(500, len(num_df))))
+    tab4.plotly_chart(fig_pair)
+
+
+
+
 
 
 st.link_button("Github Repo", "https://github.com/rp-nyu/climatechange-final-ds4a")
