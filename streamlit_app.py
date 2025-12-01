@@ -87,7 +87,7 @@ if app_mode == "Introduction":
     totalmiss = dfnull.sum().round(2)
     st.write("Percentage of total missing values:",totalmiss)
     if totalmiss <= 30:
-        st.success("Looks good! as we have less then 30 percent of missing values.")
+        st.success("Looks good! We have less then 30 percent of missing values.")
     else:
         st.warning("Poor data quality due to greater than 30 percent of missing value.")
 
@@ -98,7 +98,7 @@ if app_mode == "Introduction":
     completeness= round(sum(nonmissing)/len(df),2)
     st.write("Completeness ratio:",completeness)
     if completeness >= 0.80:
-        st.success("Looks good! as we have completeness ratio greater than 0.85.")
+        st.success("Looks good! We have completeness ratio greater than 0.85.")
            
     else:
         st.success("Poor data quality due to low completeness ratio( less than 0.85).")
