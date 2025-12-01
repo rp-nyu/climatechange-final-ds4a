@@ -3,6 +3,11 @@ import pandas as pd
 import plotly.express as px
 from plotly import figure_factory
 import plotly.graph_objects as go
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
 
 
 df = pd.read_csv("climate_change_dataset.csv")
@@ -202,5 +207,211 @@ elif app_mode == "Visualization":
         st.plotly_chart(fig, use_container_width=True)
 
 
-st.link_button("Github Repo", "https://github.com/rp-nyu/climatechange-final-ds4a")
 
+
+# PREDICTION PAGE
+elif app_mode == "Prediction":
+    st.title("Climate Prediction: Model Comparison 🌡️")
+    st.markdown("Compare the results of a **Linear Regression** (simple, interpretable) and **Random Forest** (complex, non-linear) model on predicting **Average Temperature** for the selected country.")
+
+    # --- 1. SELECTION ---
+    st.header("Select Country and Model")
+    
+    # Country Selector
+    selected_country_pred = st.selectbox(
+        "Select Country to Analyze", df['Country'].unique(), index=0
+    )
+    
+    # NEW: Model Selector
+    model_choice = st.selectbox(
+        "Select Regression Model",
+        ["Random Forest Regressor", "Linear Regression"],
+        index=0 # Default to Random Forest
+    )
+    
+    # Target is fixed to Avg Temperature
+    target_variable = 'Avg Temperature (°C)'
+    st.write(f"**Target:** {target_variable}")
+
+    # Define all available predictor features (excluding the target and Country)
+    predictor_variables = [
+        'Year', 'CO2 Emissions (Tons/Capita)', 'Sea Level Rise (mm)', 
+        'Rainfall (mm)', 'Population', 'Renewable Energy (%)',
+        'Extreme Weather Events', 'Forest Area (%)'
+    ]
+    
+    st.info(f"The model will use **{len(predictor_variables)} features** to predict temperature trends for **{selected_country_pred}**.")
+    st.markdown("---")
+
+
+    # --- 2. DATA PREPARATION (COUNTRY-SPECIFIC AND AGGREGATED) ---
+    st.header(f"Model Training for {selected_country_pred}")
+    
+    # 1. FILTER DATA BY SELECTED COUNTRY
+    country_df = df[df['Country'] == selected_country_pred].copy()
+    
+    # 2. AGGREGATION FIX: Group by Year and calculate the mean for all numeric columns.
+    # This is CRUCIAL to remove the duplicate year entries that were messing up the plot.
+    agg_cols = [col for col in predictor_variables if col != 'Year'] + [target_variable]
+    
+    # Calculate the mean for all features for each year
+    clean_country_df = country_df.groupby('Year')[agg_cols].mean().reset_index()
+
+    # 3. Drop any rows with remaining missing values after aggregation
+    model_df = clean_country_df.dropna()
+    
+    if len(model_df) < 10:
+        st.error(f"Not enough clean data points for {selected_country_pred} (only {len(model_df)} years of data). Please select a country with more complete data.")
+        st.stop()
+        
+    X = model_df[predictor_variables]
+    y = model_df[target_variable]
+    
+    # Train Model based on user choice
+    if model_choice == "Random Forest Regressor":
+        model = RandomForestRegressor(n_estimators=50, max_depth=4, random_state=42)
+    else: # Linear Regression
+        model = LinearRegression()
+        
+    model.fit(X, y)
+    y_pred_full = model.predict(X) 
+    
+    # Evaluation Metrics
+    r2 = r2_score(y, y_pred_full)
+    
+    col1, col2 = st.columns(2)
+    col1.metric("Selected Model", model_choice)
+    col2.metric("R² Score (Model Fit)", f"**{r2:.4f}**")
+    
+    if r2 > 0.8:
+         st.success("R² Status: Very Strong Fit! 🚀")
+    elif r2 > 0.6:
+         st.info("R² Status: Good Fit. 👍")
+    else:
+         st.warning("R² Status: Weak Fit. 📉")
+    
+    st.markdown("---")
+
+
+    # --------------------------------------------------------------------------------------------------
+    # --- 3. ACTUAL VS PREDICTED TREND (CLEAN VISUALIZATION) ---
+    # --------------------------------------------------------------------------------------------------
+    st.header("Actual vs. Predicted Trend Over Time")
+    st.info("The actual temperature data has been averaged by year to ensure a smooth, chronological trendline.")
+    
+    # Create a DataFrame for plotting, combining Actual and Predicted data (already sorted by Year due to groupby)
+    plot_df = pd.DataFrame({
+        'Year': model_df['Year'],
+        'Actual Temperature': y,
+        'Predicted Temperature': y_pred_full
+    })
+    
+    # Create the Plotly chart
+    fig_trend = go.Figure()
+
+    # Trace 1: Actual Temperature (Blue line)
+    fig_trend.add_trace(go.Scatter(
+        x=plot_df['Year'], y=plot_df['Actual Temperature'], 
+        mode='lines+markers', name='Actual Temperature',
+        line=dict(color='blue', width=2),
+        marker=dict(size=6)
+    ))
+
+    # Trace 2: Predicted Temperature (Red line)
+    fig_trend.add_trace(go.Scatter(
+        x=plot_df['Year'], y=plot_df['Predicted Temperature'], 
+        mode='lines+markers', name='Predicted Temperature',
+        line=dict(color='red', width=2, dash='dot'),
+        marker=dict(size=6)
+    ))
+
+    fig_trend.update_layout(
+        title=f"Actual vs. Predicted Temperature Trend for {selected_country_pred} ({model_choice})",
+        xaxis_title="Year",
+        yaxis_title="Average Temperature (°C)",
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+        hovermode="x unified"
+    )
+    
+    st.plotly_chart(fig_trend, use_container_width=True)
+    
+    st.markdown("---")
+
+
+    # --- 4. MODEL INSIGHTS ---
+    st.header("Model Insights")
+    
+    if model_choice == "Random Forest Regressor":
+        st.subheader("Feature Importance (Random Forest)")
+        st.info("This shows the relative power of each factor in predicting temperature.")
+        
+        # Get feature importances from the trained RF model
+        importances = model.feature_importances_
+        feature_importance_df = pd.DataFrame({
+            'Feature': X.columns,
+            'Importance': importances
+        }).sort_values(by='Importance', ascending=True)
+
+        # Plot the feature importance
+        fig_imp = px.bar(
+            feature_importance_df,
+            x='Importance',
+            y='Feature',
+            orientation='h',
+            title=f"Feature Importance for Temperature in {selected_country_pred}"
+        )
+        fig_imp.update_layout(yaxis={'categoryorder':'total ascending'})
+        
+        st.plotly_chart(fig_imp, use_container_width=True)
+        
+    else: # Linear Regression
+        st.subheader("Model Coefficients (Linear Regression)")
+        st.info("This shows the direction and magnitude of the straight-line relationship for each factor.")
+
+        # Display the coefficients
+        coef_df = pd.DataFrame({
+            'Feature': predictor_variables,
+            'Coefficient': model.coef_.round(6)
+        }).sort_values(by='Coefficient', key=abs, ascending=False)
+        
+        st.dataframe(coef_df, use_container_width=True)
+        
+        st.markdown(f"""
+        **Interpretation:** A positive coefficient means an increase in that feature drives temperature **up**.
+        Baseline Temperature Estimate (Intercept): **{model.intercept_:.4f} °C**
+        """)
+
+    st.markdown("---")
+
+
+    # --- 5. INTERACTIVE PREDICTOR TOOL ---
+    st.header("Interactive Prediction Tool")
+    st.info(f"Adjust the factors below to see the predicted **{target_variable}**.")
+    
+    # Create columns for inputs (4 columns per row)
+    input_cols = st.columns(min(4, len(predictor_variables)))
+    input_data = {}
+    
+    for i, feature in enumerate(predictor_variables):
+        with input_cols[i % len(input_cols)]:
+            min_val = X[feature].min()
+            max_val = X[feature].max()
+            
+            default_val = X[feature].mean()
+
+            user_input = st.number_input(
+                f"Input **{feature}**:",
+                min_value=float(min_val),
+                max_value=float(max_val),
+                value=float(default_val),
+                key=f"input_{feature}"
+            )
+            input_data[feature] = user_input
+
+    # Prepare input for prediction
+    input_df = pd.DataFrame([input_data])
+    predicted_target = model.predict(input_df)[0]
+
+    st.success(f"**Predicted Avg Temperature:** **{predicted_target:.2f}** °C")
+
+    st.link_button("Github Repo", "https://github.com/rp-nyu/climatechange-final-ds4a")
