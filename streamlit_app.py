@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from plotly import figure_factory
+import plotly.graph_objects as go
+
 
 df = pd.read_csv("climate_change_dataset.csv")
 
@@ -108,15 +110,96 @@ if app_mode == "Introduction":
 
 # VISUALIZATION PAGE
 elif app_mode == "Visualization":
-    st.markdown("### Visualization")
+    st.markdown("### Country-wise Climate Trends")
 
-    list_vars = df.columns
-    
-    
+    # Country selector
+    selected_country = st.selectbox("Select a country", df['Country'].unique())
+
+    # Variable selector
+    numeric_cols = [
+        'Avg Temperature (°C)', 'CO2 Emissions (Tons/Capita)', 
+        'Sea Level Rise (mm)', 'Rainfall (mm)',
+        'Population', 'Renewable Energy (%)',
+        'Extreme Weather Events', 'Forest Area (%)'
+    ]
+    selected_variable = st.selectbox("Select variable to plot", numeric_cols)
+
+    # Plot type selector
+    plot_types = ["Line with mean ± std", "Scatter & trend", "Box plot", "Violin plot"]
+    selected_plot_type = st.selectbox("Select plot type", plot_types)
+
+    # Filter data for selected country
+    country_data = df[df['Country'] == selected_country]
+
+    fig = None
+
+    if selected_plot_type == "Line with mean ± std":
+        agg = country_data.groupby('Year')[selected_variable].agg(['mean', 'std']).reset_index()
+
+        x = agg['Year']
+        mean = agg['mean'].interpolate()
+        std = agg['std'].interpolate()
+
+        fig = go.Figure()
+
+        # Shaded area for mean ± std
+        fig.add_trace(go.Scatter(
+            x=pd.concat([x, x[::-1]]),  # forward + backward for closed shape
+            y=pd.concat([mean + std, (mean - std)[::-1]]),
+            fill='toself',
+            fillcolor='rgba(173,216,230,0.3)',
+            line=dict(color='rgba(255,255,255,0)'),
+            hoverinfo='skip',
+            showlegend=True,
+            name='±1 Std'
+        ))
+
+        # Mean line
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=mean,
+            mode='lines+markers',
+            line=dict(color='blue'),
+            name='Mean'
+        ))
+
+        fig.update_layout(
+            title=f"{selected_variable} over time for {selected_country}",
+            xaxis_title='Year',
+            yaxis_title=selected_variable
+        )
+
+    elif selected_plot_type == "Scatter & trend":
+        fig = px.scatter(
+            country_data,
+            x='Year',
+            y=selected_variable,
+            trendline='ols',
+            title=f"{selected_variable} per year for {selected_country}"
+        )
+
+    elif selected_plot_type == "Box plot":
+        fig = px.box(
+            country_data,
+            x='Year',
+            y=selected_variable,
+            points='all',
+            title=f"{selected_variable} distribution per year for {selected_country}"
+        )
+
+    elif selected_plot_type == "Violin plot":
+        fig = px.violin(
+            country_data,
+            x='Year',
+            y=selected_variable,
+            box=True,
+            points='all',
+            title=f"{selected_variable} distribution per year for {selected_country}"
+        )
 
 
-
-
+    if fig:
+        st.plotly_chart(fig, use_container_width=True)
 
 
 st.link_button("Github Repo", "https://github.com/rp-nyu/climatechange-final-ds4a")
