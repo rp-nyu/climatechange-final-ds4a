@@ -8,6 +8,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
+import shap
 
 
 df = pd.read_csv("climate_change_dataset.csv")
@@ -389,7 +391,119 @@ elif app_mode == "Prediction":
 # AI EXPLAINABILITY PAGE
 # ===========================
 elif app_mode == "AI Explainability":
-    st.title("AI Explainability & Model Insights 🔍")
+    import shap
+    import matplotlib.pyplot as plt
+    from sklearn.tree import plot_tree, DecisionTreeRegressor
+
+    st.title("🤖 Why did the model predict that?")
+    st.info("Using SHAP (SHapley Additive exPlanations) to understand feature drivers.")
+
+    # --- 1. Data Prep (Same as Prediction Page) ---
+    st.sidebar.markdown("---")
+    country_choice = st.sidebar.selectbox("Select Country for Analysis", df['Country'].unique())
+    
+    # Filter and prepare data
+    country_df = df[df['Country'] == country_choice].copy()
+    
+    # Define features and target
+    target_variable = 'Avg Temperature (°C)'
+    predictor_variables = [
+        'Year', 'CO2 Emissions (Tons/Capita)', 'Sea Level Rise (mm)', 
+        'Rainfall (mm)', 'Population', 'Renewable Energy (%)',
+        'Extreme Weather Events', 'Forest Area (%)'
+    ]
+    
+    # Clean data
+    agg_cols = [col for col in predictor_variables if col != 'Year'] + [target_variable]
+    clean_country_df = country_df.groupby('Year')[agg_cols].mean().reset_index()
+    model_df = clean_country_df.dropna()
+    
+    X = model_df[predictor_variables]
+    y = model_df[target_variable]
+
+    # --- 2. Session State Management ---
+    if 'shap_values' not in st.session_state:
+        st.session_state.shap_values = None
+    if 'model_choice_xai' not in st.session_state:
+        st.session_state.model_choice_xai = None
+
+    # --- 3. Model Selection ---
+    model_choice = st.selectbox("Choose Model to Explain", ["Random Forest", "Linear Regression"])
+
+    if st.button("Generate Explanation"):
+        with st.spinner("Calculating SHAP values..."):
+            
+            # Train the model freshly for this specific country data
+            if model_choice == "Random Forest":
+                model = RandomForestRegressor(n_estimators=50, max_depth=4, random_state=42)
+                model.fit(X, y)
+                # Tree Explainer
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X)
+            else:
+                model = LinearRegression()
+                model.fit(X, y)
+                # Linear Explainer (needs background data, we use X)
+                explainer = shap.LinearExplainer(model, X)
+                shap_values = explainer.shap_values(X)
+
+            # Store in session state
+            st.session_state.shap_values = shap_values
+            st.session_state.model_choice_xai = model_choice
+            st.session_state.X_data = X # Store X so we can plot it later
+
+    # --- 4. Visualizations ---
+    if st.session_state.shap_values is not None:
+        
+        # Retrieve data
+        shap_values = st.session_state.shap_values
+        X_display = st.session_state.X_data
+        current_model = st.session_state.model_choice_xai
+
+        st.markdown("---")
+
+        # PLOT 1: Feature Importance (Summary Plot)
+        st.subheader(f"1. Global Feature Importance ({current_model})")
+        st.write("Which features impact the Temperature the most?")
+        
+        # Create matplotlib figure
+        fig_shap1 = plt.figure(figsize=(10, 6))
+        shap.summary_plot(shap_values, X_display, plot_type="bar", show=False)
+        st.pyplot(fig_shap1)
+        
+        st.markdown("---")
+
+        # PLOT 2: Dependence Plot
+        st.subheader("2. Deep Dive: Feature Dependence")
+        st.write("How does a specific feature value change the temperature prediction?")
+        
+        selected_feature = st.selectbox("Select feature to analyze:", predictor_variables, index=0)
+        
+        if selected_feature in X_display.columns:
+            fig_shap2, ax = plt.subplots(figsize=(10, 6))
+            shap.dependence_plot(selected_feature, shap_values, X_display, ax=ax, show=False)
+            st.pyplot(fig_shap2)
+        else:
+            st.warning(f"Could not find {selected_feature} in dataset.")
+
+        st.markdown("---")
+
+        # PLOT 3: Tree Visualization (Only for Random Forest)
+        st.subheader("3. Random Forest: Under the Hood")
+        
+        if current_model == "Random Forest":
+            st.write("Below is **one single tree** from the forest to demonstrate the logic.")
+            
+            # Train a small tree just for visualization
+            viz_tree = DecisionTreeRegressor(max_depth=3, random_state=42)
+            viz_tree.fit(X, y)
+            
+            # Plot Tree
+            fig_tree, ax_tree = plt.subplots(figsize=(20, 10))
+            plot_tree(viz_tree, feature_names=X.columns, filled=True, rounded=True, impurity=False, fontsize=10, ax=ax_tree)
+            st.pyplot(fig_tree)
+        else:
+            st.info("Select 'Random Forest' in the dropdown above to see the Decision Tree visualization.")
 
     
 
