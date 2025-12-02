@@ -390,128 +390,297 @@ elif app_mode == "Prediction":
 # ===========================
 # AI EXPLAINABILITY PAGE
 # ===========================
+
 elif app_mode == "AI Explainability":
     import shap
     import matplotlib.pyplot as plt
-    from sklearn.tree import plot_tree, DecisionTreeRegressor
 
-    st.title("🤖 Why did the model predict that?")
-    st.info("Using SHAP (SHapley Additive exPlanations) to understand feature drivers.")
+    st.title("🌍 AI Explainability: Understanding Climate Drivers")
+    st.write("""
+    This page explains *why* our models predict certain temperatures using  
+    **SHAP (SHapley Additive exPlanations)** — the most widely trusted method  
+    for interpreting machine-learning predictions.
 
-    # --- 1. Data Prep (Same as Prediction Page) ---
-    st.sidebar.markdown("---")
-    country_choice = st.sidebar.selectbox("Select Country for Analysis", df['Country'].unique())
-    
-    # Filter and prepare data
+    We focus on:
+    - **Global feature importance** — which climate indicators matter most overall  
+    - **Dependence analysis** — how each variable affects predicted temperature  
+    """)
+
+    st.markdown("---")
+
+    # ===============================================================
+    # 1. COUNTRY SELECTION
+    # ===============================================================
+    st.subheader("1. Choose a Country for Explainability")
+    country_choice = st.selectbox("Select Country", df['Country'].unique())
+
     country_df = df[df['Country'] == country_choice].copy()
-    
-    # Define features and target
+
     target_variable = 'Avg Temperature (°C)'
     predictor_variables = [
-        'Year', 'CO2 Emissions (Tons/Capita)', 'Sea Level Rise (mm)', 
+        'Year', 'CO2 Emissions (Tons/Capita)', 'Sea Level Rise (mm)',
         'Rainfall (mm)', 'Population', 'Renewable Energy (%)',
         'Extreme Weather Events', 'Forest Area (%)'
     ]
-    
-    # Clean data
+
+    # Aggregate by year
     agg_cols = [col for col in predictor_variables if col != 'Year'] + [target_variable]
-    clean_country_df = country_df.groupby('Year')[agg_cols].mean().reset_index()
-    model_df = clean_country_df.dropna()
-    
-    X = model_df[predictor_variables]
-    y = model_df[target_variable]
+    clean_country_df = country_df.groupby('Year')[agg_cols].mean().reset_index().dropna()
 
-    # --- 2. Session State Management ---
-    if 'shap_values' not in st.session_state:
-        st.session_state.shap_values = None
-    if 'model_choice_xai' not in st.session_state:
-        st.session_state.model_choice_xai = None
+    X = clean_country_df[predictor_variables]
+    y = clean_country_df[target_variable]
 
-    # --- 3. Model Selection ---
-    model_choice = st.selectbox("Choose Model to Explain", ["Random Forest", "Linear Regression"])
+    if len(X) < 8:
+        st.warning("Not enough clean yearly data for SHAP analysis.")
+        st.stop()
 
-    if st.button("Generate Explanation"):
-        with st.spinner("Calculating SHAP values..."):
-            
-            # Train the model freshly for this specific country data
-            if model_choice == "Random Forest":
-                model = RandomForestRegressor(n_estimators=50, max_depth=4, random_state=42)
-                model.fit(X, y)
-                # Tree Explainer
+    st.markdown("---")
+
+    # ===============================================================
+    # 2. MODEL SELECTION
+    # ===============================================================
+    st.subheader("2. Choose a Model to Explain")
+    model_choice = st.selectbox("Select Model", ["Random Forest Regressor", "Linear Regression"])
+
+    # Train selected model
+    if model_choice == "Random Forest Regressor":
+        model = RandomForestRegressor(n_estimators=50, max_depth=4, random_state=42)
+    else:
+        model = LinearRegression()
+
+    model.fit(X, y)
+
+    # ===============================================================
+    # 3. GENERATE SHAP VALUES
+    # ===============================================================
+    if st.button("Generate SHAP Explanations 🚀"):
+        with st.spinner("Computing SHAP values for climate predictors..."):
+
+            if model_choice == "Random Forest Regressor":
                 explainer = shap.TreeExplainer(model)
                 shap_values = explainer.shap_values(X)
             else:
-                model = LinearRegression()
-                model.fit(X, y)
-                # Linear Explainer (needs background data, we use X)
                 explainer = shap.LinearExplainer(model, X)
                 shap_values = explainer.shap_values(X)
 
-            # Store in session state
-            st.session_state.shap_values = shap_values
-            st.session_state.model_choice_xai = model_choice
-            st.session_state.X_data = X # Store X so we can plot it later
+            # SAVE to session state
+            st.session_state["explainer"] = explainer
+            st.session_state["shap_values"] = shap_values
+            st.session_state["X_display"] = X
+            st.session_state["model_used"] = model_choice
 
-    # --- 4. Visualizations ---
-    if st.session_state.shap_values is not None:
-        
-        # Retrieve data
-        shap_values = st.session_state.shap_values
-        X_display = st.session_state.X_data
-        current_model = st.session_state.model_choice_xai
+    # ===============================================================
+    # 4. DISPLAY GLOBAL EXPLANATIONS
+    # ===============================================================
+    if "shap_values" in st.session_state:
+
+        shap_values = st.session_state["shap_values"]
+        X_display = st.session_state["X_display"]
+        model_used = st.session_state["model_used"]
 
         st.markdown("---")
+        st.subheader("3. Global Feature Importance")
+        st.write("""
+        This chart shows which climate indicators influence predicted temperature  
+        **the most on average**.
+        """)
 
-        # PLOT 1: Feature Importance (Summary Plot)
-        st.subheader(f"1. Global Feature Importance ({current_model})")
-        st.write("Which features impact the Temperature the most?")
-        
-        # Create matplotlib figure
-        fig_shap1 = plt.figure(figsize=(10, 6))
+        fig1 = plt.figure(figsize=(10, 6))
         shap.summary_plot(shap_values, X_display, plot_type="bar", show=False)
-        st.pyplot(fig_shap1)
-        
-        st.markdown("---")
+        st.pyplot(fig1)
 
-        # PLOT 2: Dependence Plot
-        st.subheader("2. Deep Dive: Feature Dependence")
-        st.write("How does a specific feature value change the temperature prediction?")
-        
-        selected_feature = st.selectbox("Select feature to analyze:", predictor_variables, index=0)
-        
-        if selected_feature in X_display.columns:
-            fig_shap2, ax = plt.subplots(figsize=(10, 6))
-            shap.dependence_plot(selected_feature, shap_values, X_display, ax=ax, show=False)
-            st.pyplot(fig_shap2)
-        else:
-            st.warning(f"Could not find {selected_feature} in dataset.")
+        st.info("""
+        **How to read this:**
+        - Long bars = strong climate influence  
+        - Positive SHAP = pushes predicted temperature up  
+        - Negative SHAP = pushes predicted temperature down  
+        """)
 
         st.markdown("---")
 
-        # PLOT 3: Tree Visualization (Only for Random Forest)
-        st.subheader("3. Random Forest: Under the Hood")
-        
-        if current_model == "Random Forest":
-            st.write("Below is **one single tree** from the forest to demonstrate the logic.")
-            
-            # Train a small tree just for visualization
-            viz_tree = DecisionTreeRegressor(max_depth=3, random_state=42)
-            viz_tree.fit(X, y)
-            
-            # Plot Tree
-            fig_tree, ax_tree = plt.subplots(figsize=(20, 10))
-            plot_tree(viz_tree, feature_names=X.columns, filled=True, rounded=True, impurity=False, fontsize=10, ax=ax_tree)
-            st.pyplot(fig_tree)
-        else:
-            st.info("Select 'Random Forest' in the dropdown above to see the Decision Tree visualization.")
+        # ===============================================================
+        # 5. DEPENDENCE (FEATURE EFFECT ANALYSIS)
+        # ===============================================================
+        st.subheader("4. How a Selected Variable Affects Temperature")
+        st.write("""
+        This plot shows how **changes in a single climate variable**  
+        (e.g., CO₂ emissions or Renewable Energy %)  
+        influence predicted temperatures.
+        """)
 
-    
+        selected_feature = st.selectbox("Select a variable to analyze:", predictor_variables)
+
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        shap.dependence_plot(selected_feature, shap_values, X_display, ax=ax2, show=False)
+        st.pyplot(fig2)
+
+        st.info("""
+        **Interpretation Examples:**
+        - Increasing CO₂ emissions typically increases predicted temperature  
+        - More renewable energy (%) often reduces predicted temperature  
+        - Greater forest area (%) is associated with cooling effects  
+        - Sea level rise corresponds to warming climate patterns  
+        """)
 
 # ===========================
 # HYPERPARAMETER TUNING PAGE
 # ===========================
 elif app_mode == "Hyperparameter Tuning":
+    import wandb
+    from sklearn.model_selection import train_test_split
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics import mean_squared_error
+    import time
+
     st.title("Model Optimization: Hyperparameter Tuning ⚙️📊")
+    st.write("""
+    In this section, we fine-tune the **Random Forest Regressor** to find the best model for predicting  
+    **Average Temperature (°C)** using climate indicators.
+    
+    We track experiments using **Weights & Biases (W&B)** to visualize results, compare runs,  
+    and select the best-performing model.
+    """)
+
+    st.markdown("---")
+    st.subheader("Step 1: Connect to Weights & Biases")
+    st.write("Enter your W&B API key if you want to log experiments online. Otherwise, the app will run offline.")
+
+    wb_api = st.text_input("W&B API Key (Optional)", type="password")
+
+    if st.button("Validate API Key"):
+        if wb_api:
+            try:
+                wandb.login(key=wb_api)
+                st.success("Logged into Weights & Biases successfully!")
+            except:
+                st.error("Invalid API key. Running in offline mode instead.")
+        else:
+            st.info("No key provided — running in offline mode.")
+
+    st.markdown("---")
+    st.subheader("Step 2: Select Country for Hyperparameter Tuning")
+
+    tuning_country = st.selectbox("Choose Country", df['Country'].unique())
+
+    # --- Prepare data for tuning ---
+    country_df = df[df['Country'] == tuning_country].copy()
+
+    target = 'Avg Temperature (°C)'
+    features = [
+        'Year', 'CO2 Emissions (Tons/Capita)', 'Sea Level Rise (mm)', 
+        'Rainfall (mm)', 'Population', 'Renewable Energy (%)',
+        'Extreme Weather Events', 'Forest Area (%)'
+    ]
+
+    agg_cols = [col for col in features if col != 'Year'] + [target]
+    model_df = country_df.groupby('Year')[agg_cols].mean().reset_index().dropna()
+
+    if len(model_df) < 10:
+        st.error("Not enough clean data for this country to run hyperparameter tuning.")
+        st.stop()
+
+    X = model_df[features]
+    y = model_df[target]
+
+    st.markdown("---")
+    st.subheader("Step 3: Run Hyperparameter Search")
+
+    st.write("We will test combinations of:")
+    st.code("""
+n_estimators = [20, 50, 100]
+max_depth = [2, 4, 6]
+    """, language="python")
+
+    if st.button("Start Grid Search 🚀"):
+        st.info("Running Grid Search for Random Forest...")
+
+        n_estimators_list = [20, 50, 100]
+        max_depth_list = [2, 4, 6]
+
+        results = []
+        total_runs = len(n_estimators_list) * len(max_depth_list)
+        progress = st.progress(0)
+        run_count = 0
+
+        for n_est in n_estimators_list:
+            for depth in max_depth_list:
+                run_count += 1
+                progress.progress(run_count / total_runs)
+
+                # Initialize W&B run
+                if wb_api:
+                    wandb_run = wandb.init(
+                        project="climate-hyperparameter-tuning",
+                        config={"n_estimators": n_est, "max_depth": depth},
+                        reinit=True
+                    )
+                else:
+                    wandb_run = wandb.init(
+                        project="climate-hyperparameter-tuning",
+                        mode="disabled",  # offline
+                        config={"n_estimators": n_est, "max_depth": depth},
+                        reinit=True
+                    )
+
+                # Train/test split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+
+                model = RandomForestRegressor(
+                    n_estimators=n_est,
+                    max_depth=depth,
+                    random_state=42
+                )
+
+                model.fit(X_train, y_train)
+                preds = model.predict(X_test)
+                rmse = np.sqrt(mean_squared_error(y_test, preds))
+
+                # Save results
+                results.append({
+                    "n_estimators": n_est,
+                    "max_depth": depth,
+                    "RMSE": rmse
+                })
+
+                # Log to W&B
+                wandb.log({"RMSE": rmse})
+                wandb_run.finish()
+                time.sleep(0.1)
+
+        st.success("Grid Search Completed!")
+
+        # Convert results to DataFrame
+        results_df = pd.DataFrame(results)
+
+        col1, col2 = st.columns([1, 2])
+
+        with col1:
+            st.write("### Results Table")
+            st.dataframe(results_df.style.highlight_min(subset=["RMSE"], color="lightgreen"))
+
+        with col2:
+            st.write("### Optimization Heatmap")
+            pivot = results_df.pivot(index="max_depth", columns="n_estimators", values="RMSE")
+
+            fig = px.imshow(
+                pivot,
+                text_auto=".2f",
+                color_continuous_scale="viridis",
+                labels=dict(color="RMSE"),
+                title="RMSE Heatmap (Lower is Better)"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("💡 Tuning Insights")
+        st.write("""
+- **Lower RMSE = better performance.**  
+- Shallow trees (low max_depth) often generalize better.  
+- More trees (higher n_estimators) help stabilize predictions.  
+- Look for the darkest square on the heatmap — that is your best model.
+        """)
 
 
 # ===========================
