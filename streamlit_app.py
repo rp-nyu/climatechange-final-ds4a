@@ -352,40 +352,7 @@ elif app_mode == "Prediction":
         }).sort_values(by='Coefficient', key=abs, ascending=False)
         
         st.dataframe(coef_df, use_container_width=True)
-        
-        st.markdown(f"""
-        **Interpretation:** Positive coefficients increase predicted temperature.  
-        Intercept: **{model.intercept_:.4f} °C**
-        """)
 
-        st.markdown("---")
-
-        # --- Interactive Predictor Tool ---
-        st.header("Interactive Prediction Tool")
-        st.info("Modify feature values to generate a temperature prediction.")
-
-        input_cols = st.columns(min(4, len(predictor_variables)))
-        input_data = {}
-        
-        for i, feature in enumerate(predictor_variables):
-            with input_cols[i % len(input_cols)]:
-                min_val = X[feature].min()
-                max_val = X[feature].max()
-                default_val = X[feature].mean()
-
-                user_input = st.number_input(
-                    f"Input {feature}:",
-                    min_value=float(min_val),
-                    max_value=float(max_val),
-                    value=float(default_val),
-                    key=f"input_{feature}"
-                )
-                input_data[feature] = user_input
-
-        input_df = pd.DataFrame([input_data])
-        predicted_target = model.predict(input_df)[0]
-
-        st.success(f"Predicted Avg Temperature: **{predicted_target:.2f} °C**")
 
 # ===========================
 # AI EXPLAINABILITY PAGE
