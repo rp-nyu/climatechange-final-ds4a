@@ -492,8 +492,7 @@ elif app_mode == "AI Explainability":
         st.info("""
         **How to read this:**
         - Long bars = strong climate influence  
-        - Positive SHAP = pushes predicted temperature up  
-        - Negative SHAP = pushes predicted temperature down  
+        - Mean SHAP value represents the average impact on temperature in degrees celsius
         """)
 
         st.markdown("---")
